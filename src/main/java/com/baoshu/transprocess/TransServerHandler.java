@@ -27,19 +27,19 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 	
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
-		System.out.println("channelActive");
+
 	}
 
 	@Override
 	public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-		System.out.println("channelRead!!!!!!!!!!!!!!!!!!!!!!!");
-		ByteBuf buf = (ByteBuf) msg;  
-		String recieved = getMessage(buf);  
-        System.out.println("服务器接收到消息：" + recieved);
+//		ByteBuf buf = (ByteBuf) msg;  
+//		String recieved = getMessage(buf);  
+		String body = (String)msg;
+        System.out.println("服务器接收到消息：" + body);
         
         try {
-        	String result = dealTransProcess(recieved);
-        	ctx.writeAndFlush(getSendByteBuf(result));
+        	String result = dealTransProcess(body);
+        	ctx.writeAndFlush(getSendByteBuf(result + "$_"));
         }catch(UnsupportedEncodingException e) {
         	e.printStackTrace();
         }
