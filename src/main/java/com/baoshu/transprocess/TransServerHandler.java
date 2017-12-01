@@ -3,15 +3,15 @@ package com.baoshu.transprocess;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.StringUtils;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
+import org.zeromq.ZMQ;
 
 import com.baoshu.common.Constants;
 
@@ -19,15 +19,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.util.Constant;
-import io.netty.util.ReferenceCountUtil;
 
 public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
-	
+	public static AtomicInteger counter_integer = new AtomicInteger(10);
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
-
+		counter_integer.getAndIncrement();
 	}
 
 	@Override
@@ -107,7 +105,7 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 					case Constants.FLAG_B : case Constants.FLAG_S:
 						//调用交易方法
 						{
-							String callbackStrJy = "<result>OK</result><Ordersno>1111</Ordersno>";
+							String callbackStrJy = transOrder(xmlInfo);
 							Map<String, Object> jymap = parseXmlText(callbackStrJy);
 							if(jymap.containsKey("result") && StringUtils.isNotBlank(jymap.get("result").toString())) {
 								if(jymap.get("result").equals(Constants.RESULT_OK)) {
@@ -187,5 +185,38 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
 		return result;
 	}
+	
+
+//	private static ZMQ.Socket requester = new DealTransProcess().getRequester();
+
+	/**
+	 * 下单交易
+	 * @param params
+	 * @return
+	 */
+	private String transOrder(Map<String, Object> params) {
+
+		StringBuilder sb = new StringBuilder();
+		sb.append(counter_integer + " order");
+		sb.append(" " + params.get("Fundid").toString());
+		sb.append(" " + (params.get("Flag").toString().equals("B") ? "1" : "2"));
+		sb.append(" " + params.get("Price").toString());
+		sb.append(" " + params.get("Qty").toString());
+		sb.append(" " + params.get("LSno").toString());
+		sb.append(" " + params.get("StkCode").toString());
+		sb.append(" " + params.get("Market").toString());
+		sb.append(" \0");
+		//String request = sb.toString();
+		//byte[] sendByte = request.getBytes();
+		//System.out.println("====="+request);
+
+		//requester.send(sendByte);
+		//byte[] reply = requester.recv(0);
+		//String result = new String(reply);
+		//System.out.println("下单结果" + result + counter_integer);
+		
+		return "<result>OK</result><Ordersno>1111</Ordersno>";
+	}
+
 	
 }
