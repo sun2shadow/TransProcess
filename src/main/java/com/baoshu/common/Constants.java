@@ -22,6 +22,9 @@ public class Constants {
 	public static final String FLAG_B = "B";
 	public static final String FLAG_CD = "CD";
 	
+	public static final String FLAG_CXDL = "CXDL";//登录指令
+	public static final String FLAG_CJ = "CJ";//查询指令
+	
 	//交易返回的结果
 	public static final String RESULT_OK = "OK";
 	public static final String RESULT_ERROR = "ERROR";

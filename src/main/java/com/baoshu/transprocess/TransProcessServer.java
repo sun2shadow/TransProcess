@@ -11,7 +11,9 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.Delimiters;
 import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 public class TransProcessServer{
 	public void run() throws Exception{
 		EventLoopGroup bossGroup = new NioEventLoopGroup(); 
@@ -20,20 +22,19 @@ public class TransProcessServer{
             ServerBootstrap b = new ServerBootstrap(); 
             b.group(bossGroup, workerGroup)
              .channel(NioServerSocketChannel.class) 
-//             .option(ChannelOption.TCP_NODELAY, true)
              .childHandler(new ChannelInitializer<SocketChannel>() {
                  @Override
-                 public void initChannel(SocketChannel ch) throws Exception {
-                	 ByteBuf delimiter = Unpooled.copiedBuffer("$_".getBytes()); 
-                	 ch.pipeline().addLast(new DelimiterBasedFrameDecoder(1024, delimiter));
+                 public void initChannel(SocketChannel ch) throws Exception { 
+                	 ch.pipeline().addLast("framer", new DelimiterBasedFrameDecoder(8192, Delimiters.lineDelimiter()));
                 	 ch.pipeline().addLast(new StringDecoder());
+                	 ch.pipeline().addLast(new StringEncoder());
                 	 ch.pipeline().addLast(new TransServerHandler());
                  }
              })
              .option(ChannelOption.SO_BACKLOG, 1024)
              .childOption(ChannelOption.SO_KEEPALIVE, true); 
-    
-            ChannelFuture f = b.bind(8089).sync(); 
+            System.out.println("server start");
+            ChannelFuture f = b.bind(6789).sync(); 
             f.channel().closeFuture().sync();
         } finally {
             workerGroup.shutdownGracefully();

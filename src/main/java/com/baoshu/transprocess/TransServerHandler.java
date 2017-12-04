@@ -4,6 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.StringUtils;
@@ -22,25 +23,22 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 
 public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
-	public static AtomicInteger counter_integer = new AtomicInteger(10);
+	public static AtomicInteger counter_integer = new AtomicInteger(210);
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
-		counter_integer.getAndIncrement();
+
 	}
 
 	@Override
 	public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-//		ByteBuf buf = (ByteBuf) msg;  
-//		String recieved = getMessage(buf);  
+		
 		String body = (String)msg;
         System.out.println("服务器接收到消息：" + body);
         
-        try {
-        	String result = dealTransProcess(body);
-        	ctx.writeAndFlush(getSendByteBuf(result + "$_"));
-        }catch(UnsupportedEncodingException e) {
-        	e.printStackTrace();
-        }
+    	String result = dealTransProcess(body);
+    	System.out.println("服务器发送到消息：" + result);
+    	ctx.writeAndFlush(result + "\n");
+        
 	}
 
 	@Override
@@ -82,7 +80,6 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 			Iterator<Element> modulesIterator = root.elements().iterator(); 
 			while(modulesIterator.hasNext()) {
 				Element ele = modulesIterator.next();
-//				System.out.println(ele.getName() + ":" + ele.getTextTrim());
 				result.put(ele.getName(), ele.getTextTrim());
 			}
 			
@@ -106,7 +103,16 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 						//调用交易方法
 						{
 							String callbackStrJy = transOrder(xmlInfo);
+							try {
+								TimeUnit.MILLISECONDS.sleep(2000);
+								System.out.println("休眠：" + callbackStrJy);
+							} catch (InterruptedException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+							
 							Map<String, Object> jymap = parseXmlText(callbackStrJy);
+							System.out.println("====="+jymap);
 							if(jymap.containsKey("result") && StringUtils.isNotBlank(jymap.get("result").toString())) {
 								if(jymap.get("result").equals(Constants.RESULT_OK)) {
 									StringBuilder sb = new StringBuilder();
@@ -152,9 +158,35 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 				}
 				break;
 			case Constants.FUNCTION_TYPE_CX:
+				switch(flagName) {
+				case Constants.FLAG_CXDL:
+					String callbackStrCj = transLogin(xmlInfo);
+					Map<String, Object> cjmap = parseXmlText(callbackStrCj);
+					if(cjmap.containsKey("result") && StringUtils.isNotBlank(cjmap.get("result").toString())) {
+						if(cjmap.get("result").equals(Constants.RESULT_OK)) {
+							StringBuilder cjsb = new StringBuilder();
+							cjsb.append("<result>true</result>");
+							cjsb.append(transInfo);
+							cjsb.append("<err_code>0</err_code>");
+							cjsb.append("<err_msg>login ok</err_msg>");
+							result = cjsb.toString();
+						}else {
+							StringBuilder cjsb = new StringBuilder();
+							cjsb.append("<result>false</result>");
+							cjsb.append("<err_code>-1</err_code>");
+							cjsb.append("<err_msg>");
+							cjsb.append(cjmap.get("err_msg"));
+							cjsb.append("</err_msg>");
+							cjsb.append(transInfo);
+							result = cjsb.toString();
+						}
+					}
+					break;
+				case Constants.FLAG_CJ:
 				{
 					String callbackStrCx = "<result>true</result>";
 					Map<String, Object> cxmap = parseXmlText(callbackStrCx);
+					
 					if(cxmap.containsKey("result") && StringUtils.isNotBlank(cxmap.get("result").toString())) {
 						if(cxmap.get("result").equals(Constants.RESULT_OK)) {
 							StringBuilder cxsb = new StringBuilder();
@@ -177,6 +209,8 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 						}
 					}
 				}
+					break;
+				}
 				break;
 			default:
 				break;
@@ -187,7 +221,7 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 	}
 	
 
-//	private static ZMQ.Socket requester = new DealTransProcess().getRequester();
+	private static ZMQ.Socket requester = new DealTransProcess().getRequester();
 
 	/**
 	 * 下单交易
@@ -197,6 +231,8 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 	private String transOrder(Map<String, Object> params) {
 
 		StringBuilder sb = new StringBuilder();
+		counter_integer.getAndIncrement();
+		System.out.println("计数器：" + counter_integer);
 		sb.append(counter_integer + " order");
 		sb.append(" " + params.get("Fundid").toString());
 		sb.append(" " + (params.get("Flag").toString().equals("B") ? "1" : "2"));
@@ -206,16 +242,44 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 		sb.append(" " + params.get("StkCode").toString());
 		sb.append(" " + params.get("Market").toString());
 		sb.append(" \0");
-		//String request = sb.toString();
-		//byte[] sendByte = request.getBytes();
-		//System.out.println("====="+request);
+		String request = sb.toString();
+		byte[] sendByte = request.getBytes();
+		System.out.println("====="+request);
 
-		//requester.send(sendByte);
-		//byte[] reply = requester.recv(0);
-		//String result = new String(reply);
-		//System.out.println("下单结果" + result + counter_integer);
+		requester.send(sendByte);
+		byte[] reply = requester.recv(0);
+		String result = new String(reply);
+		System.out.println("下单结果" + result + counter_integer);
+
+		if(result.equals("sendorderok")) {
+			return "<result>OK</result><Ordersno>1111</Ordersno>";
+		}else if(result.contains("报单频率过快")) {
+			return result;
+		}else {
+			return "";
+		}
 		
-		return "<result>OK</result><Ordersno>1111</Ordersno>";
+	}
+	/**
+	 * 交易登录
+	 * @param params
+	 * @return
+	 */
+	private String transLogin(Map<String, Object> params) {
+		StringBuilder sb = new StringBuilder();
+		counter_integer.getAndIncrement();
+		System.out.println("计数器：" + counter_integer);
+		sb.append(counter_integer + " login");
+		sb.append(" " + params.get("Fundid"));
+		sb.append(" " + params.get("Password"));
+		sb.append(" \0");
+		String request = sb.toString();
+		byte[] sendByte = request.getBytes();
+		requester.send(sendByte);
+		byte[] reply = requester.recv(0);
+		String result = new String(reply);
+		System.out.println("登录结果" + result + counter_integer);
+		return "<result>OK</result>";
 	}
 
 	
