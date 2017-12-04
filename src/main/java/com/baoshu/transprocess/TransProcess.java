@@ -4,7 +4,9 @@ public class TransProcess {
 
 	public static void main(String[] args) {
 		try {
-			new TransProcessServer().run();
+			TransProcessServer server = new TransProcessServer();
+			server.init();
+			server.run();
 			
 		} catch (Exception e) {
 			// TODO Auto-generated catch block

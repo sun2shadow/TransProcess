@@ -1,6 +1,6 @@
 package com.baoshu.transprocess;
 
-import java.io.UnsupportedEncodingException;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -16,60 +16,30 @@ import org.zeromq.ZMQ;
 
 import com.baoshu.common.Constants;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.SimpleChannelInboundHandler;
 
-public class TransServerHandler extends ChannelInboundHandlerAdapter {
+public class TransServerHandler extends SimpleChannelInboundHandler<String> {
 
-	public static AtomicInteger counter_integer = new AtomicInteger(210);
+	
+	public static AtomicInteger counter_integer = new AtomicInteger(300);
+	private  ZMQ.Socket requester;
+	public TransServerHandler(ZMQ.Socket requester) {
+		this.requester = requester;
+	}
+	@Override
+	protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+		 System.out.println("服务端接受的消息 : " + msg);
+		 String result = dealTransProcess(msg);
+		 ctx.writeAndFlush(result+"\n");
+	}
+
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
-
+		System.out.println("channelActivedfhtguhjyttji!" + ctx.channel().read());
+		super.channelActive(ctx);
 	}
 
-	@Override
-	public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-		
-		String body = (String)msg;
-        System.out.println("服务器接收到消息：" + body);
-        
-    	String result = dealTransProcess(body);
-    	System.out.println("服务器发送到消息：" + result);
-    	ctx.writeAndFlush(result + "\n");
-        
-	}
-
-	@Override
-	public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-		ctx.flush();
-	}
-
-	@Override
-	public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-		cause.printStackTrace();
-		ctx.close();
-	} 
-
-	//字节转化为字符串
-	private String getMessage(ByteBuf buf) {
-		byte[] con = new byte[buf.readableBytes()];
-		buf.readBytes(con);
-		try {
-			return new String(con, "utf-8");
-		}catch (UnsupportedEncodingException e) {  
-            e.printStackTrace();  
-            return null;  
-        } 
-	}
-	//字符串转化为字节
-	private ByteBuf getSendByteBuf(String message) throws UnsupportedEncodingException {
-		byte[] req = message.getBytes("utf-8");
-		ByteBuf buf = Unpooled.buffer();
-		buf.writeBytes(req);
-		return buf;
-	}
 	//解析xml字符串
 	private Map<String, Object> parseXmlText(String text) {
 		Map<String, Object> result = new HashMap<String, Object>();
@@ -219,10 +189,6 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
 		return result;
 	}
-	
-
-	private static ZMQ.Socket requester = new DealTransProcess().getRequester();
-
 	/**
 	 * 下单交易
 	 * @param params
@@ -244,7 +210,7 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 		sb.append(" \0");
 		String request = sb.toString();
 		byte[] sendByte = request.getBytes();
-		System.out.println("====="+request);
+		System.out.println(requester+"====="+request);
 
 		requester.send(sendByte);
 		byte[] reply = requester.recv(0);
@@ -258,8 +224,9 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 		}else {
 			return "";
 		}
-		
+//		return "<result>OK</result><Ordersno>1111</Ordersno>";
 	}
+	
 	/**
 	 * 交易登录
 	 * @param params
@@ -279,8 +246,6 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 		byte[] reply = requester.recv(0);
 		String result = new String(reply);
 		System.out.println("登录结果" + result + counter_integer);
-		return "<result>OK</result>";
+		return "<result>true</result>";
 	}
-
-	
 }
