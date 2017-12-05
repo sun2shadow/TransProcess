@@ -17,15 +17,18 @@ public class Constants {
 	//活动类型：JY：交易CX：查询
 	public static final String FUNCTION_TYPE_JY = "JY";
 	public static final String FUNCTION_TYPE_CX = "CX1";
-	//交易类型:S:卖出，B：买入，CD：撤单
+	//交易类型:S:卖出，B：买入，CD：撤单 RB:融资买入 RS：融资卖出 MQHQ:买券卖券
 	public static final String FLAG_S = "S";
 	public static final String FLAG_B = "B";
+	public static final String FLAG_RB = "RB";
+	public static final String FLAG_RS = "RS";
+	public static final String FLAG_MQHQ = "MQHQ";
 	public static final String FLAG_CD = "CD";
 	
 	public static final String FLAG_CXDL = "CXDL";//登录指令
 	public static final String FLAG_CJ = "CJ";//查询指令
 	
 	//交易返回的结果
-	public static final String RESULT_OK = "OK";
-	public static final String RESULT_ERROR = "ERROR";
+	public static final String RESULT_OK = "true";
+	public static final String RESULT_ERROR = "false";
 }

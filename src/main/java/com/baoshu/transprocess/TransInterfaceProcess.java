@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,8 +27,11 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class TransInterfaceProcess {
 	
-	public static AtomicInteger counter_integer = new AtomicInteger(300);
+	public static AtomicInteger counter_integer = new AtomicInteger(1);
 	public static LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
+	
+	public static LinkedBlockingQueue<ChannelHandlerContext> dataQueue = new LinkedBlockingQueue<>();
+	public static ConcurrentMap<ChannelHandlerContext,Map<String, Object>> msgMap = new ConcurrentHashMap<>();
 	
 	private  ZMQ.Socket requester;
 	public TransInterfaceProcess() {
@@ -38,6 +42,12 @@ public class TransInterfaceProcess {
         	ZMQ.Context context = ZMQ.context(1);
     		requester = context.socket(ZMQ.REQ);
     		requester.connect("tcp://192.168.0.136:5555");
+    		
+//    		String request = "1 connect tcp://180.167.17.121:20910 \0";
+//    		byte[] sendByte = request.getBytes();
+//    		requester.send(sendByte);
+//    		byte[] reply = requester.recv(0);
+//    		System.out.println("Received " + new String(reply));
         }
 	}
 	public void dealTrans() {
@@ -50,12 +60,16 @@ public class TransInterfaceProcess {
 				while(true) {
 					try {
 						Map<String, Object> params = queue.take();
-						System.out.println("===params=="+params.get("info").toString());
+//						System.out.println("===params=="+params.get("info").toString());
 						String result = dealTransProcess(params.get("info").toString());
-						System.out.println("==result==="+result);
+//						System.out.println("==result==="+result);
 						ctx = (ChannelHandlerContext)params.get("ctx");
-						ctx.writeAndFlush(result);
+						ctx.writeAndFlush(getSendByteBuf(dealCount(result)+result));
+//						Thread.sleep(500); 
 					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (UnsupportedEncodingException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}finally {
@@ -69,6 +83,53 @@ public class TransInterfaceProcess {
 			
 		});
 		thread1.start();
+		//不停的读取channel的数据
+		Thread thread2 = new Thread(new Runnable() {
+
+			@Override
+			public void run() {
+				ChannelHandlerContext ctx = null;
+				while(true) {
+					try {
+						ctx = dataQueue.take();
+						Map<String, Object> params = msgMap.containsKey(ctx)?msgMap.get(ctx):new HashMap<>();
+						ByteBuf buf = (ByteBuf) params.get("info");
+						if(ctx.channel().isActive()) {
+							
+							byte[] b = new byte[8];
+							buf.readBytes(b);
+							int count = new Integer(new String(b));
+							System.out.println("字节数："+count);
+							byte[] data = new byte[count];
+							buf.readBytes(data); 
+							
+							try {
+								String request = new String(data, "utf-8");
+								Map<String, Object> dealData = new HashMap<>();
+								dealData.put("ctx", ctx);
+								dealData.put("info", request);
+								queue.put(dealData);
+								System.out.println("调用接口的数据："+request);
+							} catch (UnsupportedEncodingException e) {
+								buf.release();
+								msgMap.remove(ctx);
+								e.printStackTrace();
+							}
+							
+						}else {
+							msgMap.remove(ctx);
+							buf.release();
+						}
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+				
+			}
+			
+		});
+		thread2.start();
 	}
 	
 	//解析xml字符串
@@ -96,62 +157,142 @@ public class TransInterfaceProcess {
 	 * @param params
 	 * @return
 	 */
-	private String transOrder(Map<String, Object> params) {
+	private String transOrder(Map<String, Object> params, String transInfo) {
 
 		StringBuilder sb = new StringBuilder();
 		counter_integer.getAndIncrement();
 		System.out.println("计数器：" + counter_integer);
 		sb.append(counter_integer + " order");
 		sb.append(" " + params.get("Fundid").toString());
-		sb.append(" " + (params.get("Flag").toString().equals("B") ? "1" : "2"));
+		String flag = params.get("Flag").toString();
+		switch(flag) {
+		case "B":
+			flag = "1";
+			break;
+		case "S":
+			flag = "2";
+			break;
+		case "RB":
+			flag = "61";
+			break;
+		case "RS":
+			flag = "62";
+			break;
+		case "MQHQ":
+			flag = "63";
+			break;
+			default :
+				break;
+		}
+		sb.append(" " + flag);
 		sb.append(" " + params.get("Price").toString());
 		sb.append(" " + params.get("Qty").toString());
 		sb.append(" " + params.get("LSno").toString());
 		sb.append(" " + params.get("StkCode").toString());
 		sb.append(" " + params.get("Market").toString());
 		sb.append(" \0");
-//		String request = sb.toString();
-//		byte[] sendByte = request.getBytes();
-//		System.out.println(requester+"====="+request);
-//
-//		requester.send(sendByte);
-//		byte[] reply = requester.recv(0);
-//		String result = new String(reply);
-//		System.out.println("下单结果" + result + counter_integer);
-//
-//		if(result.equals("sendorderok")) {
-//			return "<result>OK</result><Ordersno>1111</Ordersno>";
-//		}else if(result.contains("报单频率过快")) {
-//			return result;
-//		}else {
-//			return "";
-//		}
-		return "<result>OK</result><Ordersno>1111</Ordersno>";
+		String request = sb.toString();
+		byte[] sendByte = request.getBytes();
+		System.out.println("下单请求"+request);
+
+		requester.send(sendByte);
+		byte[] reply = requester.recv(0);
+		String result = new String(reply);
+		System.out.println("下单结果" + result + counter_integer);
+
+		if(result.equals("sendorderok")) {
+			return "<result>true</result><Records><Record><Ordersno>"+1111+"</Ordersno>"
+					+ transInfo
+					+ "</Record></Records>";
+		}else {
+			return "<result>false</result>"
+					+ transInfo
+					+ "<err_code>-1</err_code><err_msg>资金不足</err_msg>";
+		}
+		
 	}
-	
+	/**
+	 * 撤单处理
+	 * @param params
+	 * @param transInfo
+	 * @return
+	 */
+	private String transCancelOrder(Map<String, Object>params, String transInfo) {
+		StringBuilder sb = new StringBuilder();
+		counter_integer.getAndIncrement();
+		System.out.println("撤单计数器：" + counter_integer);
+		return "<result>true</result>" + transInfo + "<err_code>0</err_code><err_msg>ok</err_msg>";
+	}
 	/**
 	 * 交易登录
 	 * @param params
 	 * @return
 	 */
-	private String transLogin(Map<String, Object> params) {
-		StringBuilder sb = new StringBuilder();
-		counter_integer.getAndIncrement();
-		System.out.println("计数器：" + counter_integer);
-		sb.append(counter_integer + " login");
-		sb.append(" " + params.get("Fundid"));
-		sb.append(" " + params.get("Password"));
-		sb.append(" \0");
+	private String transLogin(Map<String, Object> params, String transInfo) {
+//		StringBuilder sb = new StringBuilder();
+//		counter_integer.getAndIncrement();
+//		System.out.println("登录计数器：" + counter_integer);
+//		sb.append(counter_integer + " login");
+////		sb.append(" " + params.get("Fundid"));
+////		sb.append(" " + params.get("Password"));
+//		sb.append(" 58200001");
+//		sb.append(" 111111");
+//		sb.append(" \0");
 //		String request = sb.toString();
 //		byte[] sendByte = request.getBytes();
 //		requester.send(sendByte);
 //		byte[] reply = requester.recv(0);
 //		String result = new String(reply);
-//		System.out.println("登录结果" + result + counter_integer);
-		return "<result>true</result>";
+//		System.out.println("登录结果" + result + counter_integer);//登录结果loginok501
+		String result = "loginok";
+		String str = "";
+		if(result.contains("loginok")) {
+			str =  "<result>true</result><err_code>0</err_code><err_code>0</err_code>";
+		}else {
+			str = "<result>false</result><err_code>-1</err_code><err_code>错误信息</err_code>";
+		}
+		return str + transInfo;
 	}
 	
 
+	/**
+	 * 调用查询交易接口
+	 * @param params
+	 * @param transInfo
+	 * @return
+	 */
+	private String transSearch(Map<String, Object> params, String transInfo) {
+		StringBuilder sb = new StringBuilder();
+		counter_integer.getAndIncrement();
+		System.out.println("查询计数器：" + counter_integer);
+		sb.append(counter_integer + " query");
+		sb.append(" " + params.get("Poststr"));
+		sb.append(" \0");
+		String request = sb.toString();
+		byte[] sendByte = request.getBytes();
+		requester.send(sendByte);
+		byte[] reply = requester.recv(0);
+		String result = new String(reply);
+		System.out.println("查询接口调用"+result);
+		
+		StringBuilder cxsb = new StringBuilder();
+		
+		result = cxsb.toString();
+		if(result.contains("queryok")) {
+			cxsb.append("<result>true</result>");
+			cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
+			cxsb.append("<Records>");
+			String record = StringUtils.isNotBlank(result) ? "<Record>"+ result +"</Record>":"";
+			cxsb.append(record);
+			cxsb.append("</Records>");
+			
+		}else {
+			cxsb.append("<result>false</result>");
+			cxsb.append("<err_code>错误代码</err_code><err_msg>错误信息</err_msg>");
+		}
+		cxsb.append(transInfo);
+		return cxsb.toString();
+	}
 
 	
 	public String dealTransProcess(String transInfo) {
@@ -164,58 +305,13 @@ public class TransInterfaceProcess {
 			case Constants.FUNCTION_TYPE_JY:
 				switch(flagName) {
 					case Constants.FLAG_B : case Constants.FLAG_S:
+						case Constants.FLAG_RB:case Constants.FLAG_RS:
+						case Constants.FLAG_MQHQ:
 						//调用交易方法
-						{
-							String callbackStrJy = transOrder(xmlInfo);
-							try {
-								TimeUnit.MILLISECONDS.sleep(2000);
-								System.out.println("休眠：" + callbackStrJy);
-							} catch (InterruptedException e) {
-								// TODO Auto-generated catch block
-								e.printStackTrace();
-							}
-							
-							Map<String, Object> jymap = parseXmlText(callbackStrJy);
-							System.out.println("====="+jymap);
-							if(jymap.containsKey("result") && StringUtils.isNotBlank(jymap.get("result").toString())) {
-								if(jymap.get("result").equals(Constants.RESULT_OK)) {
-									StringBuilder sb = new StringBuilder();
-									sb.append("<result>true</result><Records><Record><Record><Ordersno>");
-									sb.append(jymap.containsKey("Ordersno") ? jymap.get("Ordersno") : "");
-									sb.append("</Ordersno>");
-									sb.append(transInfo);
-									sb.append("</Record></Records>");
-									result = sb.toString();
-								}else if(jymap.get("result").equals(Constants.RESULT_ERROR)) {
-									StringBuilder esb = new StringBuilder();
-									esb.append("<result>false</result>");
-									esb.append(transInfo);
-									esb.append("<err_code>-1</err_code>");
-									esb.append("<err_msg>");
-									esb.append(jymap.containsKey("err_msg") ? jymap.get("err_msg") : "");
-									esb.append("</err_msg>");
-									result = esb.toString();
-								}
-							}
-						}
-						
+						result = transOrder(xmlInfo, transInfo);
 						break;
 					case Constants.FLAG_CD:
-						{
-							String callbackStrCd = "<result>true</result>";
-							Map<String, Object> cdmap = parseXmlText(callbackStrCd);
-							if(cdmap.containsKey("result") && StringUtils.isNotBlank(cdmap.get("result").toString())) {
-								
-								StringBuilder cdsb = new StringBuilder();
-								cdsb.append("<result>true</result>");
-								cdsb.append(transInfo);
-								cdsb.append("<err_code>0</err_code><err_msg>");
-								cdsb.append(cdmap.containsKey("err_msg") ? cdmap.get("err_msg") : "");
-								cdsb.append("</err_msg>");
-								result = cdsb.toString();
-								
-							}
-						}
+						result = transCancelOrder(xmlInfo, transInfo);
 						break;
 					default:
 						break;
@@ -224,55 +320,10 @@ public class TransInterfaceProcess {
 			case Constants.FUNCTION_TYPE_CX:
 				switch(flagName) {
 				case Constants.FLAG_CXDL:
-					String callbackStrCj = transLogin(xmlInfo);
-					Map<String, Object> cjmap = parseXmlText(callbackStrCj);
-					if(cjmap.containsKey("result") && StringUtils.isNotBlank(cjmap.get("result").toString())) {
-						if(cjmap.get("result").equals(Constants.RESULT_OK)) {
-							StringBuilder cjsb = new StringBuilder();
-							cjsb.append("<result>true</result>");
-							cjsb.append(transInfo);
-							cjsb.append("<err_code>0</err_code>");
-							cjsb.append("<err_msg>login ok</err_msg>");
-							result = cjsb.toString();
-						}else {
-							StringBuilder cjsb = new StringBuilder();
-							cjsb.append("<result>false</result>");
-							cjsb.append("<err_code>-1</err_code>");
-							cjsb.append("<err_msg>");
-							cjsb.append(cjmap.get("err_msg"));
-							cjsb.append("</err_msg>");
-							cjsb.append(transInfo);
-							result = cjsb.toString();
-						}
-					}
+					result = transLogin(xmlInfo, transInfo);
 					break;
 				case Constants.FLAG_CJ:
-				{
-					String callbackStrCx = "<result>true</result>";
-					Map<String, Object> cxmap = parseXmlText(callbackStrCx);
-					
-					if(cxmap.containsKey("result") && StringUtils.isNotBlank(cxmap.get("result").toString())) {
-						if(cxmap.get("result").equals(Constants.RESULT_OK)) {
-							StringBuilder cxsb = new StringBuilder();
-							cxsb.append("<result>true</result>");
-							cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
-							cxsb.append(cxmap.containsKey("msg") && StringUtils.isNotBlank(cxmap.get("msg").toString()) ? "<Record>" + cxmap.get("msg").toString() + "</Record>" : "");
-							cxsb.append("</Records>");
-							cxsb.append(transInfo);
-							result = cxsb.toString();
-						}else if(cxmap.get("result").equals(Constants.RESULT_ERROR)) {
-							StringBuilder ecxsb = new StringBuilder();
-							ecxsb.append("<result>false</result>");
-							ecxsb.append(transInfo);
-							ecxsb.append("<err_code>");
-							ecxsb.append(cxmap.containsKey("err_code") ? cxmap.get("err_code") : "");
-							ecxsb.append("</err_code>");
-							ecxsb.append("<err_msg>");
-							ecxsb.append(cxmap.containsKey("err_msg") ? cxmap.get("err_msg") : "");
-							ecxsb.append("</err_msg>");
-						}
-					}
-				}
+					result = transSearch(xmlInfo, transInfo);
 					break;
 				}
 				break;
@@ -290,5 +341,21 @@ public class TransInterfaceProcess {
   		ByteBuf buf = Unpooled.buffer();
   		buf.writeBytes(req);
   		return buf;
+  	}
+  	
+ 	private static String dealCount(String str) {
+  		long count = str.getBytes().length;
+  		String s = count + "";
+  		long num = s.length();
+  		StringBuilder sb = new StringBuilder();
+  		if(num < 8) {
+  			for(int i = 8; i >=0; i--) {
+  				if(i < (8 - num)) {
+  					sb.append("0");
+  				}
+  			}
+  			sb.append(count);
+  		}
+  		return sb.toString();
   	}
 }
