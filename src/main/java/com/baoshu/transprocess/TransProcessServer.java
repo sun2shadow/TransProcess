@@ -1,13 +1,6 @@
 package com.baoshu.transprocess;
 
-import java.util.Queue;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import org.zeromq.ZMQ;
-
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -21,17 +14,6 @@ import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 public class TransProcessServer{
 	
-	private static ZMQ.Socket requester;
-
-	private Queue<ZMQ.Socket> queue = new LinkedBlockingQueue<ZMQ.Socket>();
-	public void init() {
-		{
-        	ZMQ.Context context = ZMQ.context(1);
-    		requester = context.socket(ZMQ.REQ);
-    		requester.connect("tcp://192.168.0.136:5555");
-    		queue.add(requester);
-        }
-	}
 	public void run() throws Exception{
 		EventLoopGroup bossGroup = new NioEventLoopGroup(); 
         EventLoopGroup workerGroup = new NioEventLoopGroup();
@@ -43,10 +25,10 @@ public class TransProcessServer{
              .childHandler(new ChannelInitializer<SocketChannel>() {
                  @Override
                  public void initChannel(SocketChannel ch) throws Exception { 
-                	 ch.pipeline().addLast("framer", new DelimiterBasedFrameDecoder(8192, Delimiters.lineDelimiter()));
-                	 ch.pipeline().addLast(new StringDecoder());
-                	 ch.pipeline().addLast(new StringEncoder());
-                	 ch.pipeline().addLast(new TransServerHandler(requester));
+//                	 ch.pipeline().addLast("framer", new DelimiterBasedFrameDecoder(8192, Delimiters.lineDelimiter()));
+//                	 ch.pipeline().addLast(new StringDecoder());
+//                	 ch.pipeline().addLast(new StringEncoder());
+                	 ch.pipeline().addLast(new TransServerHandler());
                  }
              })
              .option(ChannelOption.SO_BACKLOG, 1024)
