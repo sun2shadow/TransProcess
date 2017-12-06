@@ -19,7 +19,7 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
-		System.out.println("channelActive!" + ctx.channel().read());
+//		System.out.println("channelActive!" + ctx.channel().read());
 		super.channelActive(ctx);
 	}
 
@@ -79,8 +79,8 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
 
 	@Override
 	public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-//		cause.printStackTrace();
-//		ctx.close();
+		cause.printStackTrace();
+		ctx.close();
 	}
 
 

@@ -1,6 +1,7 @@
 package com.baoshu.transprocess;
 
 import java.io.UnsupportedEncodingException;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -27,7 +28,7 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class TransInterfaceProcess {
 	
-	public static AtomicInteger counter_integer = new AtomicInteger(1);
+	public static AtomicInteger counter_integer = new AtomicInteger(100);
 	public static LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
 	
 	public static LinkedBlockingQueue<ChannelHandlerContext> dataQueue = new LinkedBlockingQueue<>();
@@ -62,10 +63,10 @@ public class TransInterfaceProcess {
 						Map<String, Object> params = queue.take();
 //						System.out.println("===params=="+params.get("info").toString());
 						String result = dealTransProcess(params.get("info").toString());
-//						System.out.println("==result==="+result);
+						System.out.println("==result==="+dealCount(result)+result);
 						ctx = (ChannelHandlerContext)params.get("ctx");
 						ctx.writeAndFlush(getSendByteBuf(dealCount(result)+result));
-//						Thread.sleep(500); 
+						Thread.sleep(500); 
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -74,7 +75,7 @@ public class TransInterfaceProcess {
 						e.printStackTrace();
 					}finally {
 						if(Objects.nonNull(ctx)) {
-//							ctx.close();
+							ctx.close();
 						}
 					}
 				}
@@ -109,7 +110,7 @@ public class TransInterfaceProcess {
 								dealData.put("ctx", ctx);
 								dealData.put("info", request);
 								queue.put(dealData);
-								System.out.println("调用接口的数据："+request);
+//								System.out.println("调用接口的数据："+request);
 							} catch (UnsupportedEncodingException e) {
 								buf.release();
 								msgMap.remove(ctx);
@@ -201,7 +202,7 @@ public class TransInterfaceProcess {
 		System.out.println("下单结果" + result + counter_integer);
 
 		if(result.equals("sendorderok")) {
-			return "<result>true</result><Records><Record><Ordersno>"+1111+"</Ordersno>"
+			return "<result>true</result><Records><Record><Ordersno>"+params.get("LSno").toString()+params.get("DivideOrderno").toString()+"</Ordersno>"
 					+ transInfo
 					+ "</Record></Records>";
 		}else {
@@ -269,26 +270,30 @@ public class TransInterfaceProcess {
 		sb.append(" " + params.get("Poststr"));
 		sb.append(" \0");
 		String request = sb.toString();
+		System.out.println("查询接口调用参数"+request);
 		byte[] sendByte = request.getBytes();
 		requester.send(sendByte);
 		byte[] reply = requester.recv(0);
 		String result = new String(reply);
+//		String result = "queryok";
 		System.out.println("查询接口调用"+result);
 		
 		StringBuilder cxsb = new StringBuilder();
 		
-		result = cxsb.toString();
 		if(result.contains("queryok")) {
 			cxsb.append("<result>true</result>");
 			cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
 			cxsb.append("<Records>");
-			String record = StringUtils.isNotBlank(result) ? "<Record>"+ result +"</Record>":"";
+			String record = StringUtils.isNotBlank(result) ? "<Record>"+ "0102000000120539|20170322|000001|xr2wstL40NA=|7679|SZ|173113|100|1.000|0|||0102000000120539|B" +"</Record>":"";
 			cxsb.append(record);
 			cxsb.append("</Records>");
 			
 		}else {
 			cxsb.append("<result>false</result>");
-			cxsb.append("<err_code>错误代码</err_code><err_msg>错误信息</err_msg>");
+			cxsb.append("<err_code>-1</err_code>");
+			cxsb.append("<err_msg>");
+			cxsb.append(result);
+			cxsb.append("</err_msg>");
 		}
 		cxsb.append(transInfo);
 		return cxsb.toString();
@@ -342,7 +347,11 @@ public class TransInterfaceProcess {
   		buf.writeBytes(req);
   		return buf;
   	}
-  	
+  	/**
+  	 * 处理消息之前的字节数
+  	 * @param str
+  	 * @return
+  	 */
  	private static String dealCount(String str) {
   		long count = str.getBytes().length;
   		String s = count + "";
@@ -358,4 +367,34 @@ public class TransInterfaceProcess {
   		}
   		return sb.toString();
   	}
+ 	
+ 	//将汉字转化为base64
+ 	
+ 	public static String charToBase64(String str) {
+ 		String result = "";
+ 		try {
+			result = Base64.getEncoder().encodeToString(str.getBytes("GBK"));
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+ 		return result;
+ 	}
+ 	/**
+ 	 * 截取券商的名称
+ 	 * @param str
+ 	 * @return
+ 	 */
+ 	public static String getStkname(String str) {
+ 		String result = "";
+ 		if(StringUtils.isNotBlank(str)) {
+ 			String[] strArray = str.split("\\|");
+ 			try {
+ 				result = strArray[3];
+ 			}catch(ArrayIndexOutOfBoundsException e) {
+ 				
+ 			}
+ 		}
+ 		return result;
+ 	}
 }
