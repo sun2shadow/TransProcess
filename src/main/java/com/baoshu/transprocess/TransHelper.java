@@ -57,7 +57,6 @@ public class TransHelper {
 		Map<String,Object> map = parseXmlText(text);
 		if(!map.isEmpty()) {
 			String str = map.containsKey("Function") ? map.get("Function").toString() : "error";
-			System.out.println(map);
 			if(map.containsKey("result") && map.get("result").equals(Constants.RESULT_OK) && map.containsKey("Function") && map.get("Function").toString().equals("JY")) {
 				return true;
 			}

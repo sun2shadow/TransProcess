@@ -2,25 +2,17 @@ package com.baoshu.transprocess;
 
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.StringUtils;
-import org.dom4j.Document;
-import org.dom4j.DocumentException;
-import org.dom4j.DocumentHelper;
-import org.dom4j.Element;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.zeromq.ZMQ;
 
 import com.baoshu.common.Constants;
@@ -35,12 +27,12 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class TransInterfaceProcess {
 	
-	public static AtomicInteger counter_integer = new AtomicInteger(9300);
-	@Autowired
-	private TransLogService transLogService;
-	@Autowired
+	public static AtomicInteger counter_integer = new AtomicInteger(3430800);
 	private QueryLogService queryLogService;
 	private  ZMQ.Socket requester;
+	
+	private static TransLogService transLogService;
+	private static ApplicationContext ctx=null;
 	public TransInterfaceProcess() {
 		
 	}
@@ -49,7 +41,10 @@ public class TransInterfaceProcess {
         	ZMQ.Context context = ZMQ.context(1);
     		requester = context.socket(ZMQ.REQ);
     		requester.connect("tcp://192.168.0.229:5555");
-    		
+    		ctx = new ClassPathXmlApplicationContext(  
+	                "classpath:/applicationContext-dao.xml");  
+	        transLogService = (TransLogService) ctx.getBean("transLogService");
+	        queryLogService = (QueryLogService) ctx.getBean("queryLogService");
 //    		String request = "1 connect tcp://180.167.17.121:20910 \0";
 //    		byte[] sendByte = request.getBytes();
 //    		requester.send(sendByte);
@@ -75,7 +70,6 @@ public class TransInterfaceProcess {
 						ctx.writeAndFlush(getSendByteBuf(TransHelper.dealCount(result)+result));
 						
 						if(TransHelper.resultOk(result)) {
-							System.out.println("=transService==="+transLogService);
 							transLogService.add(result);
 						}
 						
@@ -152,7 +146,11 @@ public class TransInterfaceProcess {
 				while(true) {
 					try {
 						TransLog transLog = QueueSet.mapperQueue.take();
-						String result = transSearch(transLog.getLsno() + transLog.getDevideOrderNo());
+						if(Objects.nonNull(transLog)) {
+							System.out.println("orderNo====="+transLog.getOrdersNo());
+						}
+						String result = transSearch(transLog.getLsno());
+						System.out.println("查询结果:"+result);
 						String[] strArray = result.split(" ");
 						if(!result.equals("notfund") && strArray.length > 1) {
 							//委托总数量
@@ -303,9 +301,8 @@ public class TransInterfaceProcess {
 	private String transSearch(String ordersNo) {
 		StringBuilder sb = new StringBuilder();
 		counter_integer.getAndIncrement();
-		System.out.println("查询计数器：" + counter_integer);
 		sb.append(counter_integer + " query");
-		sb.append(" " + ordersNo);
+		sb.append(" " + "000087");
 		sb.append(" \0");
 		String request = sb.toString();
 		System.out.println("查询接口调用参数"+request);
@@ -315,25 +312,6 @@ public class TransInterfaceProcess {
 		String result = new String(reply);
 //		String result = "queryok";
 		System.out.println("查询接口调用"+result);
-		
-//		StringBuilder cxsb = new StringBuilder();
-//		
-//		if(result.contains("queryok")) {
-//			cxsb.append("<result>true</result>");
-//			cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
-//			cxsb.append("<Records>");
-//			String record = StringUtils.isNotBlank(result) ? "<Record>"+ "0102000000120539|20170322|000001|xr2wstL40NA=|7679|SZ|173113|100|1.000|0|||0102000000120539|B" +"</Record>":"";
-//			cxsb.append(record);
-//			cxsb.append("</Records>");
-//			
-//		}else {
-//			cxsb.append("<result>false</result>");
-//			cxsb.append("<err_code>-1</err_code>");
-//			cxsb.append("<err_msg>");
-//			cxsb.append(result);
-//			cxsb.append("</err_msg>");
-//		}
-//		cxsb.append(transInfo);
 		return result;
 	}
 
@@ -366,7 +344,7 @@ public class TransInterfaceProcess {
 					result = transLogin(xmlInfo, transInfo);
 					break;
 				case Constants.FLAG_CJ:
-//					result = transSearch(xmlInfo, transInfo);
+					result = searchFromDB(xmlInfo.get("post_str").toString());
 					break;
 				}
 				break;
@@ -389,9 +367,42 @@ public class TransInterfaceProcess {
   		Map<String, Object> queryInfo = TransHelper.parseXmlText(xmlInfo);
   		String fundid = queryInfo.get("Fundid").toString();
   		String postStr = queryInfo.get("Poststr").toString();
+  		StringBuilder result = new StringBuilder();
+  		result.append("<result>true</result><FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
   		if(StringUtils.isBlank(postStr)) {
-//  			queryLogService
+  			List<QueryLog> queryList = queryLogService.list(fundid, 0);
+  			 
+  			if(!queryList.isEmpty()) {
+  				String ordersNo = queryList.get(0).getOrdersNo();
+  				TransLog  transLog = transLogService.get(ordersNo);
+  				
+  				for(int i = 0; i < queryList.size(); i++) {
+  					StringBuilder sb = new StringBuilder();
+  					sb.append("<Record>");
+  					sb.append(postStr + "|");
+  					sb.append(LocalDate.now() + "|");
+  					sb.append(transLog.getStkCode() + "|");
+  					sb.append(TransHelper.charToBase64("西部证券") + "|");
+  					sb.append(transLog.getOrdersNo() + "|");
+  					sb.append(transLog.getMarket() + "|");
+  					sb.append("|");
+  					QueryLog queryLog = queryList.get(i);
+  					sb.append(queryLog.getUseAmount() + "|");
+  					BigDecimal price = queryLog.getUseMoney().divide(new BigDecimal(queryLog.getUseAmount()), 2, BigDecimal.ROUND_FLOOR);
+  					sb.append(price + "|");
+  					sb.append("|");
+  					sb.append(transLog.getQty() + "|");
+  					sb.append(transLog.getPrice() + "|");
+  					sb.append("|");
+  					sb.append(transLog.getFlag());
+  					sb.append("</Record>");
+  					
+  				}
+  			}
   		}
-  		return "";
+  		result.append("</Records>");
+  		result.append(xmlInfo);
+  		
+  		return result.toString();
   	}
 }

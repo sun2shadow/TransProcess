@@ -1,6 +1,7 @@
 package com.baoshu.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Component;
 import com.baoshu.common.Constants;
 import com.baoshu.dao.mapper.TransLogMapper;
 import com.baoshu.dao.model.TransLog;
+import com.baoshu.dao.model.TransLogExample;
 import com.baoshu.transprocess.QueueSet;
 import com.baoshu.transprocess.TransHelper;
 
@@ -33,6 +35,8 @@ public class TransLogServiceImpl implements TransLogService {
 			transLog.setLsno(map.get("LSno").toString());
 			transLog.setDevideOrderNo(map.get("DivideOrderno").toString());
 			transLog.setRequestId(map.get("RequsetID").toString());
+			transLog.setOrdersNo(map.get("LSno").toString()+map.get("DivideOrderno").toString());
+			transLog.setIsDone(false);
 			int count = transMapper.insert(transLog);
 			if(count > 0) {
 				try {
@@ -45,6 +49,16 @@ public class TransLogServiceImpl implements TransLogService {
 		}
 		return 0;
 		
+	}
+	@Override
+	public TransLog get(String ordersNo) {
+		TransLogExample example = new TransLogExample();
+		TransLogExample.Criteria criteria = example.createCriteria();
+		criteria.andOrdersNoEqualTo(ordersNo);
+		List<TransLog> transLog = transMapper.selectByExample(example);
+		if(!transLog.isEmpty())
+			return transLog.get(0);
+		return null;
 	}
 
 }

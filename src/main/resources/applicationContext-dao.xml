@@ -45,7 +45,7 @@
     <!-- 配置SqlSessionFactoryBean -->
     <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
         <property name="dataSource" ref="dataSource"/>
-        <property name="configLocation" value="classpath:sqlMapConfig.xml"/>
+        
         <!-- mapper配置路径 -->
         <property name="mapperLocations">
             <list>
@@ -57,7 +57,7 @@
     <!-- Activates scanning of @Autowired -->
     <context:annotation-config/>
     <!-- Activates scanning of @Repository and @Service -->
-    <context:component-scan base-package="com.baoshu.dao"/>
+    <context:component-scan base-package="com.baoshu.dao.*;com.baoshu.service"/>
 
     <!-- 自动装配：通过扫描的模式，扫描目录在com/zxhy.zx.bmp/mapper目录下，所有的mapper都继承 SqlMapper接口的接口 -->
     <!-- MapperScannerConfigurer将会创建MapperFactoryBean，之后自动装配 -->
@@ -78,4 +78,5 @@
             <ref local="transactionManager"/>
         </property>
     </bean>
+    
 </beans>
