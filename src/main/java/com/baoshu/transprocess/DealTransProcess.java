@@ -13,7 +13,7 @@ public class DealTransProcess {
 	public DealTransProcess() {
 		ZMQ.Context context = ZMQ.context(1);
 		requester = context.socket(ZMQ.REQ);
-		requester.connect("tcp://192.168.0.136:5555");
+		requester.connect("tcp://192.168.0.229:5555");
 		
 		String request1 = "1 connect tcp://180.167.17.121:20910 \0";
 		byte[] sendByte1 = request1.getBytes();

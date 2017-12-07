@@ -1,6 +1,8 @@
 package com.baoshu.transprocess;
 
 import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -18,9 +20,14 @@ import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.zeromq.ZMQ;
 
 import com.baoshu.common.Constants;
+import com.baoshu.dao.model.QueryLog;
+import com.baoshu.dao.model.TransLog;
+import com.baoshu.service.QueryLogService;
+import com.baoshu.service.TransLogService;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -28,12 +35,11 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class TransInterfaceProcess {
 	
-	public static AtomicInteger counter_integer = new AtomicInteger(100);
-	public static LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
-	
-	public static LinkedBlockingQueue<ChannelHandlerContext> dataQueue = new LinkedBlockingQueue<>();
-	public static ConcurrentMap<ChannelHandlerContext,Map<String, Object>> msgMap = new ConcurrentHashMap<>();
-	
+	public static AtomicInteger counter_integer = new AtomicInteger(9300);
+	@Autowired
+	private TransLogService transLogService;
+	@Autowired
+	private QueryLogService queryLogService;
 	private  ZMQ.Socket requester;
 	public TransInterfaceProcess() {
 		
@@ -42,7 +48,7 @@ public class TransInterfaceProcess {
 		{
         	ZMQ.Context context = ZMQ.context(1);
     		requester = context.socket(ZMQ.REQ);
-    		requester.connect("tcp://192.168.0.136:5555");
+    		requester.connect("tcp://192.168.0.229:5555");
     		
 //    		String request = "1 connect tcp://180.167.17.121:20910 \0";
 //    		byte[] sendByte = request.getBytes();
@@ -60,13 +66,20 @@ public class TransInterfaceProcess {
 				ChannelHandlerContext ctx = null;
 				while(true) {
 					try {
-						Map<String, Object> params = queue.take();
+						Map<String, Object> params = QueueSet.queue.take();
 //						System.out.println("===params=="+params.get("info").toString());
 						String result = dealTransProcess(params.get("info").toString());
-						System.out.println("==result==="+dealCount(result)+result);
+						System.out.println("==result==="+TransHelper.dealCount(result)+result);
+						
 						ctx = (ChannelHandlerContext)params.get("ctx");
-						ctx.writeAndFlush(getSendByteBuf(dealCount(result)+result));
-						Thread.sleep(500); 
+						ctx.writeAndFlush(getSendByteBuf(TransHelper.dealCount(result)+result));
+						
+						if(TransHelper.resultOk(result)) {
+							System.out.println("=transService==="+transLogService);
+							transLogService.add(result);
+						}
+						
+//						Thread.sleep(500); 
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -92,8 +105,8 @@ public class TransInterfaceProcess {
 				ChannelHandlerContext ctx = null;
 				while(true) {
 					try {
-						ctx = dataQueue.take();
-						Map<String, Object> params = msgMap.containsKey(ctx)?msgMap.get(ctx):new HashMap<>();
+						ctx = QueueSet.dataQueue.take();
+						Map<String, Object> params = QueueSet.msgMap.containsKey(ctx)?QueueSet.msgMap.get(ctx):new HashMap<>();
 						ByteBuf buf = (ByteBuf) params.get("info");
 						if(ctx.channel().isActive()) {
 							
@@ -109,16 +122,16 @@ public class TransInterfaceProcess {
 								Map<String, Object> dealData = new HashMap<>();
 								dealData.put("ctx", ctx);
 								dealData.put("info", request);
-								queue.put(dealData);
+								QueueSet.queue.put(dealData);
 //								System.out.println("调用接口的数据："+request);
 							} catch (UnsupportedEncodingException e) {
 								buf.release();
-								msgMap.remove(ctx);
+								QueueSet.msgMap.remove(ctx);
 								e.printStackTrace();
 							}
 							
 						}else {
-							msgMap.remove(ctx);
+							QueueSet.msgMap.remove(ctx);
 							buf.release();
 						}
 					} catch (InterruptedException e) {
@@ -131,27 +144,50 @@ public class TransInterfaceProcess {
 			
 		});
 		thread2.start();
-	}
-	
-	//解析xml字符串
-	private Map<String, Object> parseXmlText(String text) {
-		Map<String, Object> result = new HashMap<String, Object>();
-		try {
-			Document document = DocumentHelper.parseText("<trans>" + text + "</trans>");
-			Element root = document.getRootElement();
-			
-			Iterator<Element> modulesIterator = root.elements().iterator(); 
-			while(modulesIterator.hasNext()) {
-				Element ele = modulesIterator.next();
-				result.put(ele.getName(), ele.getTextTrim());
+		
+		Thread thread3 = new Thread(new Runnable() {
+
+			@Override
+			public void run() {
+				while(true) {
+					try {
+						TransLog transLog = QueueSet.mapperQueue.take();
+						String result = transSearch(transLog.getLsno() + transLog.getDevideOrderNo());
+						String[] strArray = result.split(" ");
+						if(!result.equals("notfund") && strArray.length > 1) {
+							//委托总数量
+							int totalNum = transLog.getQty();
+							//已成交数量
+							int num = Integer.parseInt(strArray[1]);
+							if(totalNum >= num) {
+								QueueSet.mapperQueue.put(transLog);
+							}
+							
+							String ordersNo = transLog.getLsno() + transLog.getDevideOrderNo();
+							QueryLog queryLog = new QueryLog();
+							queryLog.setOrdersNo(ordersNo);
+							queryLog.setFundid(transLog.getFundid());
+							Map<String, Object> moneyAndAmount = queryLogService.totalMoneyAndAmount(ordersNo);
+							BigDecimal searchMoney = new BigDecimal(strArray[0]);
+							queryLog.setUseMoney(searchMoney.subtract(new BigDecimal(moneyAndAmount.get("useMoneys").toString())));
+							int searchAmount = new Integer(strArray[1]);
+							queryLog.setUseAmount(searchAmount - new Integer(moneyAndAmount.get("useAmounts").toString()));
+							queryLog.setPostStr(LocalDateTime.now().getNano());
+							queryLogService.add(queryLog);
+						}
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+				
 			}
 			
-		} catch (DocumentException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return result;
+		});
+		thread3.start();
 	}
+	
+
 	
 	/**
 	 * 下单交易
@@ -196,9 +232,10 @@ public class TransInterfaceProcess {
 		byte[] sendByte = request.getBytes();
 		System.out.println("下单请求"+request);
 
-		requester.send(sendByte);
-		byte[] reply = requester.recv(0);
-		String result = new String(reply);
+//		requester.send(sendByte);
+//		byte[] reply = requester.recv(0);
+//		String result = new String(reply);
+		String result = "sendorderok";
 		System.out.println("下单结果" + result + counter_integer);
 
 		if(result.equals("sendorderok")) {
@@ -240,6 +277,7 @@ public class TransInterfaceProcess {
 //		sb.append(" 111111");
 //		sb.append(" \0");
 //		String request = sb.toString();
+//		System.out.print(requester+"登录参数："+request);
 //		byte[] sendByte = request.getBytes();
 //		requester.send(sendByte);
 //		byte[] reply = requester.recv(0);
@@ -262,12 +300,12 @@ public class TransInterfaceProcess {
 	 * @param transInfo
 	 * @return
 	 */
-	private String transSearch(Map<String, Object> params, String transInfo) {
+	private String transSearch(String ordersNo) {
 		StringBuilder sb = new StringBuilder();
 		counter_integer.getAndIncrement();
 		System.out.println("查询计数器：" + counter_integer);
 		sb.append(counter_integer + " query");
-		sb.append(" " + params.get("Poststr"));
+		sb.append(" " + ordersNo);
 		sb.append(" \0");
 		String request = sb.toString();
 		System.out.println("查询接口调用参数"+request);
@@ -278,30 +316,30 @@ public class TransInterfaceProcess {
 //		String result = "queryok";
 		System.out.println("查询接口调用"+result);
 		
-		StringBuilder cxsb = new StringBuilder();
-		
-		if(result.contains("queryok")) {
-			cxsb.append("<result>true</result>");
-			cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
-			cxsb.append("<Records>");
-			String record = StringUtils.isNotBlank(result) ? "<Record>"+ "0102000000120539|20170322|000001|xr2wstL40NA=|7679|SZ|173113|100|1.000|0|||0102000000120539|B" +"</Record>":"";
-			cxsb.append(record);
-			cxsb.append("</Records>");
-			
-		}else {
-			cxsb.append("<result>false</result>");
-			cxsb.append("<err_code>-1</err_code>");
-			cxsb.append("<err_msg>");
-			cxsb.append(result);
-			cxsb.append("</err_msg>");
-		}
-		cxsb.append(transInfo);
-		return cxsb.toString();
+//		StringBuilder cxsb = new StringBuilder();
+//		
+//		if(result.contains("queryok")) {
+//			cxsb.append("<result>true</result>");
+//			cxsb.append("<FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
+//			cxsb.append("<Records>");
+//			String record = StringUtils.isNotBlank(result) ? "<Record>"+ "0102000000120539|20170322|000001|xr2wstL40NA=|7679|SZ|173113|100|1.000|0|||0102000000120539|B" +"</Record>":"";
+//			cxsb.append(record);
+//			cxsb.append("</Records>");
+//			
+//		}else {
+//			cxsb.append("<result>false</result>");
+//			cxsb.append("<err_code>-1</err_code>");
+//			cxsb.append("<err_msg>");
+//			cxsb.append(result);
+//			cxsb.append("</err_msg>");
+//		}
+//		cxsb.append(transInfo);
+		return result;
 	}
 
 	
 	public String dealTransProcess(String transInfo) {
-		Map<String, Object> xmlInfo = parseXmlText(transInfo);
+		Map<String, Object> xmlInfo = TransHelper.parseXmlText(transInfo);
 		String funName = xmlInfo.containsKey("Function") ? xmlInfo.get("Function").toString()  : "";
 		String flagName = xmlInfo.containsKey("Flag") ? xmlInfo.get("Flag").toString()  : "";
 		String result = "";
@@ -328,7 +366,7 @@ public class TransInterfaceProcess {
 					result = transLogin(xmlInfo, transInfo);
 					break;
 				case Constants.FLAG_CJ:
-					result = transSearch(xmlInfo, transInfo);
+//					result = transSearch(xmlInfo, transInfo);
 					break;
 				}
 				break;
@@ -347,54 +385,13 @@ public class TransInterfaceProcess {
   		buf.writeBytes(req);
   		return buf;
   	}
-  	/**
-  	 * 处理消息之前的字节数
-  	 * @param str
-  	 * @return
-  	 */
- 	private static String dealCount(String str) {
-  		long count = str.getBytes().length;
-  		String s = count + "";
-  		long num = s.length();
-  		StringBuilder sb = new StringBuilder();
-  		if(num < 8) {
-  			for(int i = 8; i >=0; i--) {
-  				if(i < (8 - num)) {
-  					sb.append("0");
-  				}
-  			}
-  			sb.append(count);
+  	private String searchFromDB(String xmlInfo) {
+  		Map<String, Object> queryInfo = TransHelper.parseXmlText(xmlInfo);
+  		String fundid = queryInfo.get("Fundid").toString();
+  		String postStr = queryInfo.get("Poststr").toString();
+  		if(StringUtils.isBlank(postStr)) {
+//  			queryLogService
   		}
-  		return sb.toString();
+  		return "";
   	}
- 	
- 	//将汉字转化为base64
- 	
- 	public static String charToBase64(String str) {
- 		String result = "";
- 		try {
-			result = Base64.getEncoder().encodeToString(str.getBytes("GBK"));
-		} catch (UnsupportedEncodingException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
- 		return result;
- 	}
- 	/**
- 	 * 截取券商的名称
- 	 * @param str
- 	 * @return
- 	 */
- 	public static String getStkname(String str) {
- 		String result = "";
- 		if(StringUtils.isNotBlank(str)) {
- 			String[] strArray = str.split("\\|");
- 			try {
- 				result = strArray[3];
- 			}catch(ArrayIndexOutOfBoundsException e) {
- 				
- 			}
- 		}
- 		return result;
- 	}
 }

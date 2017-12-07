@@ -1,16 +1,10 @@
 package com.baoshu.transprocess;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 
@@ -51,8 +45,8 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
         ByteBuf buf = (ByteBuf)msg;
 
 //        byte[] msgByte  ;
-        if(TransInterfaceProcess.msgMap.containsKey(ctx)) {
-        	params = TransInterfaceProcess.msgMap.get(ctx);
+        if(QueueSet.msgMap.containsKey(ctx)) {
+        	params = QueueSet.msgMap.get(ctx);
         	ByteBuf oldBuf = (ByteBuf) params.get("info");
         	oldBuf.writeBytes(buf);
         	params.put("info", oldBuf);
@@ -66,8 +60,8 @@ public class TransServerHandler extends ChannelInboundHandlerAdapter {
         }
         params.put("ctx", ctx);
         
-        TransInterfaceProcess.msgMap.put(ctx, params);
-        TransInterfaceProcess.dataQueue.put(ctx);
+        QueueSet.msgMap.put(ctx, params);
+        QueueSet.dataQueue.put(ctx);
 	}
 
 
