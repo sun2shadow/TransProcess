@@ -15,13 +15,14 @@ import com.baoshu.dao.model.QueryLogExample;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-@Component("TransLogService")
+@Component("queryLogService")
 public class QueryLogServiceImpl implements QueryLogService{
 
 	@Autowired
 	private QueryLogMapper mapper;
 	@Override
 	public int add(QueryLog queryLog) throws DataAccessException {
+		mapper.insert(queryLog);
 		return 0;
 	}
 
@@ -36,7 +37,7 @@ public class QueryLogServiceImpl implements QueryLogService{
 		QueryLogExample.Criteria criteria = example.createCriteria();
 		criteria.andFundidEqualTo(fundid);
 		
-		if(Objects.nonNull(poststr))
+		if(Objects.nonNull(poststr) && poststr != 0)
 			criteria.andPostStrGreaterThan(poststr);
 		
 		SimpleDateFormat myFmt1 = new SimpleDateFormat("yyyy-MM-dd"); 

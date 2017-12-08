@@ -27,7 +27,7 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class TransInterfaceProcess {
 	
-	public static AtomicInteger counter_integer = new AtomicInteger(3430800);
+	public static AtomicInteger counter_integer = new AtomicInteger(1500);
 	private QueryLogService queryLogService;
 	private  ZMQ.Socket requester;
 	
@@ -40,15 +40,23 @@ public class TransInterfaceProcess {
 		{
         	ZMQ.Context context = ZMQ.context(1);
     		requester = context.socket(ZMQ.REQ);
-    		requester.connect("tcp://192.168.0.229:5555");
+    		requester.connect("tcp://192.168.0.136:5555");
     		ctx = new ClassPathXmlApplicationContext(  
 	                "classpath:/applicationContext-dao.xml");  
 	        transLogService = (TransLogService) ctx.getBean("transLogService");
 	        queryLogService = (QueryLogService) ctx.getBean("queryLogService");
+	        
 //    		String request = "1 connect tcp://180.167.17.121:20910 \0";
 //    		byte[] sendByte = request.getBytes();
 //    		requester.send(sendByte);
 //    		byte[] reply = requester.recv(0);
+//    		System.out.println("Received " + new String(reply));
+//    		
+//    		request = "2 login 58200001 111111 \0";
+//    		sendByte = request.getBytes();
+//
+//    		requester.send(sendByte);
+//    		reply = requester.recv(0);
 //    		System.out.println("Received " + new String(reply));
         }
 	}
@@ -147,32 +155,42 @@ public class TransInterfaceProcess {
 					try {
 						TransLog transLog = QueueSet.mapperQueue.take();
 						if(Objects.nonNull(transLog)) {
-							System.out.println("orderNo====="+transLog.getOrdersNo());
+							System.out.println("getLsno====="+transLog.getLsno());
 						}
 						String result = transSearch(transLog.getLsno());
 						System.out.println("查询结果:"+result);
 						String[] strArray = result.split(" ");
-						if(!result.equals("notfund") && strArray.length > 1) {
+						System.out.println(strArray.length);
+						
+						if(!result.equals("notfound") && strArray.length > 1) {
 							//委托总数量
 							int totalNum = transLog.getQty();
 							//已成交数量
 							int num = Integer.parseInt(strArray[1]);
-							if(totalNum >= num) {
-								QueueSet.mapperQueue.put(transLog);
+							//如果没有全部成交，则加入队列再次查询
+							System.out.println(totalNum+"==="+num);
+							if(totalNum > num) {
+								QueueSet.mapperQueue.put(transLog);	
+							}
+							{
+								String ordersNo = transLog.getLsno() + transLog.getDevideOrderNo();
+								QueryLog queryLog = new QueryLog();
+								queryLog.setOrdersNo(ordersNo);
+								queryLog.setFundid(transLog.getFundid());
+								Map<String, Object> moneyAndAmount = queryLogService.totalMoneyAndAmount(ordersNo);
+								System.out.println(moneyAndAmount);
+								BigDecimal searchMoney = new BigDecimal(strArray[0]);//已经成交的金额
+								queryLog.setUseMoney(searchMoney.subtract(new BigDecimal(moneyAndAmount.get("useMoneys").toString())));
+								int searchAmount = new Integer(strArray[1]);
+								queryLog.setUseAmount(searchAmount - new Integer(moneyAndAmount.get("useAmounts").toString()));
+								queryLog.setPostStr(LocalDateTime.now().getNano());
+								queryLogService.add(queryLog);
 							}
 							
-							String ordersNo = transLog.getLsno() + transLog.getDevideOrderNo();
-							QueryLog queryLog = new QueryLog();
-							queryLog.setOrdersNo(ordersNo);
-							queryLog.setFundid(transLog.getFundid());
-							Map<String, Object> moneyAndAmount = queryLogService.totalMoneyAndAmount(ordersNo);
-							BigDecimal searchMoney = new BigDecimal(strArray[0]);
-							queryLog.setUseMoney(searchMoney.subtract(new BigDecimal(moneyAndAmount.get("useMoneys").toString())));
-							int searchAmount = new Integer(strArray[1]);
-							queryLog.setUseAmount(searchAmount - new Integer(moneyAndAmount.get("useAmounts").toString()));
-							queryLog.setPostStr(LocalDateTime.now().getNano());
-							queryLogService.add(queryLog);
+						}else {
+							QueueSet.mapperQueue.put(transLog);
 						}
+						Thread.sleep(2000);
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -230,10 +248,10 @@ public class TransInterfaceProcess {
 		byte[] sendByte = request.getBytes();
 		System.out.println("下单请求"+request);
 
-//		requester.send(sendByte);
-//		byte[] reply = requester.recv(0);
-//		String result = new String(reply);
-		String result = "sendorderok";
+		requester.send(sendByte);
+		byte[] reply = requester.recv(0);
+		String result = new String(reply);
+//		String result = "sendorderok";
 		System.out.println("下单结果" + result + counter_integer);
 
 		if(result.equals("sendorderok")) {
@@ -302,7 +320,7 @@ public class TransInterfaceProcess {
 		StringBuilder sb = new StringBuilder();
 		counter_integer.getAndIncrement();
 		sb.append(counter_integer + " query");
-		sb.append(" " + "000087");
+		sb.append(" " + ordersNo);
 		sb.append(" \0");
 		String request = sb.toString();
 		System.out.println("查询接口调用参数"+request);
@@ -344,7 +362,7 @@ public class TransInterfaceProcess {
 					result = transLogin(xmlInfo, transInfo);
 					break;
 				case Constants.FLAG_CJ:
-					result = searchFromDB(xmlInfo.get("post_str").toString());
+					result = searchFromDB(transInfo);
 					break;
 				}
 				break;
@@ -363,15 +381,15 @@ public class TransInterfaceProcess {
   		buf.writeBytes(req);
   		return buf;
   	}
-  	private String searchFromDB(String xmlInfo) {
-  		Map<String, Object> queryInfo = TransHelper.parseXmlText(xmlInfo);
+  	private String searchFromDB(String transInfo) {
+  		Map<String, Object> queryInfo = TransHelper.parseXmlText(transInfo);
   		String fundid = queryInfo.get("Fundid").toString();
   		String postStr = queryInfo.get("Poststr").toString();
   		StringBuilder result = new StringBuilder();
   		result.append("<result>true</result><FieldsDesc>Poststr|Trddate|Stkcode|Stkname|Ordersno|Market|Matchtime|Matchqty|Matchprice|Matchtype|Orderqty|Orderprice|Matchcode|Bsflag</FieldsDesc><Records>");
   		if(StringUtils.isBlank(postStr)) {
   			List<QueryLog> queryList = queryLogService.list(fundid, 0);
-  			 
+  			 System.out.println("=queryList="+queryList.size());
   			if(!queryList.isEmpty()) {
   				String ordersNo = queryList.get(0).getOrdersNo();
   				TransLog  transLog = transLogService.get(ordersNo);
@@ -396,12 +414,12 @@ public class TransInterfaceProcess {
   					sb.append("|");
   					sb.append(transLog.getFlag());
   					sb.append("</Record>");
-  					
+  					result.append(sb.toString());
   				}
   			}
   		}
   		result.append("</Records>");
-  		result.append(xmlInfo);
+  		result.append(transInfo);
   		
   		return result.toString();
   	}

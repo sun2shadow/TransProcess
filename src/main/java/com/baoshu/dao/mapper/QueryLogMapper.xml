@@ -92,7 +92,7 @@
     from query_log
     where orders_no = #{ordersNo,jdbcType=VARCHAR}
   </select>
-  <select id="totalMoneyAndAmount" parameterType="java.lang.String">
+  <select id="totalMoneyAndAmount" parameterType="java.lang.String" resultType="map">
   	 select ifnull(sum(use_money),0) as useMoneys, ifnull(sum(use_amount),0) as useAmounts from query_log where orders_no = #{ordersNo,jdbcType=VARCHAR}
   	
   </select>
